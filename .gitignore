@@ -4,6 +4,7 @@
 *.so
 *.dylib
 prompt-vcs/prompt-vcs
+prompt-vcs/cmd/prompt-vcs/prompt-vcs
 
 # Test files
 *.test

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/rand"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -36,19 +38,16 @@ func NewServer(dbPath string) (*Server, error) {
 }
 
 func (s *Server) setupRoutes() {
-	// Prompt CRUD
 	s.echo.GET("/api/prompts", s.listPrompts)
 	s.echo.POST("/api/prompts", s.createPrompt)
 	s.echo.GET("/api/prompts/:id", s.getPrompt)
 	s.echo.PUT("/api/prompts/:id", s.updatePrompt)
 	s.echo.DELETE("/api/prompts/:id", s.deletePrompt)
 
-	// Version control
 	s.echo.GET("/api/prompts/:id/commits", s.getCommits)
 	s.echo.POST("/api/prompts/:id/commits", s.commitPrompt)
 	s.echo.GET("/api/prompts/:id/diff", s.diffPrompts)
 
-	// Collections
 	s.echo.GET("/api/collections", s.listCollections)
 	s.echo.POST("/api/collections", s.createCollection)
 }
@@ -98,19 +97,30 @@ func (s *Server) getPrompt(c echo.Context) error {
 
 func (s *Server) updatePrompt(c echo.Context) error {
 	id := c.Param("id")
-	var prompt models.Prompt
-	if err := c.Bind(&prompt); err != nil {
+	var req struct {
+		Content string `json:"content"`
+	}
+	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	// In real implementation, merge with existing and create new version
-	_ = id
+	if err := s.db.UpdatePromptVersion(id, req.Content); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	prompt, err := s.db.GetPrompt(id)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
 	return c.JSON(http.StatusOK, prompt)
 }
 
 func (s *Server) deletePrompt(c echo.Context) error {
 	id := c.Param("id")
-	_ = id // Delete from DB
+	if err := s.db.DeletePrompt(id); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -128,12 +138,18 @@ func (s *Server) commitPrompt(c echo.Context) error {
 	var req struct {
 		Message string `json:"message"`
 		Author  string `json:"author"`
+		Content string `json:"content"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	// Create commit
+	if req.Content != "" {
+		if err := s.db.UpdatePromptVersion(id, req.Content); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+	}
+
 	hash := generateHash()
 	if err := s.db.AddCommit(id, hash, req.Message, req.Author); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -143,12 +159,10 @@ func (s *Server) commitPrompt(c echo.Context) error {
 }
 
 func (s *Server) diffPrompts(c echo.Context) error {
-	// Implementation for diff
 	return c.JSON(http.StatusOK, map[string]string{"diff": "coming soon"})
 }
 
 func (s *Server) listCollections(c echo.Context) error {
-	// Implementation for listing collections
 	return c.JSON(http.StatusOK, []models.Collection{})
 }
 
@@ -161,10 +175,17 @@ func (s *Server) createCollection(c echo.Context) error {
 }
 
 func generateID() string {
-	return "prompt-" + time.Now().Format("20060102150405")
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "prompt-" + time.Now().Format("20060102150405")
+	}
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
 func generateHash() string {
-	// Simplified hash generation using timestamp
-	return "commit-" + time.Now().Format("20060102150405")
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "commit-" + time.Now().Format("20060102150405")
+	}
+	return fmt.Sprintf("%x", b)
 }

@@ -1,25 +1,26 @@
 package cli
 
 import (
+	"crypto/rand"
 	"fmt"
 	"os"
 	"time"
 
+	"prompt-vcs/internal/api"
 	"prompt-vcs/internal/models"
 	storage "prompt-vcs/internal/storage/db"
+	"prompt-vcs/internal/version"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	dbPath     string
-	promptName string
-	promptTags []string
-	collection string
-	content    string
+	dbPath      string
+	promptTags  []string
+	collection  string
+	showVersion bool
 )
 
-// rootCmd represents the base command
 func rootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "prompt-vcs",
@@ -31,11 +32,18 @@ versioning, and organizing LLM prompts with Git-like semantics.`,
 				dbPath = os.Getenv("HOME") + "/.prompt-vcs/prompts.db"
 			}
 		},
+		Run: func(cmd *cobra.Command, args []string) {
+			if showVersion {
+				fmt.Println("prompt-vcs version", version.Version)
+				return
+			}
+			cmd.Help()
+		},
 	}
 
 	cmd.PersistentFlags().StringVarP(&dbPath, "db", "d", "", "Database path (default: ~/.prompt-vcs/prompts.db)")
+	cmd.PersistentFlags().BoolVarP(&showVersion, "version", "v", false, "Print the version number")
 
-	// Add subcommands
 	cmd.AddCommand(initCmd())
 	cmd.AddCommand(addCmd())
 	cmd.AddCommand(listCmd())
@@ -49,7 +57,6 @@ versioning, and organizing LLM prompts with Git-like semantics.`,
 	return cmd
 }
 
-// initCmd creates the initial database
 func initCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
@@ -65,7 +72,6 @@ func initCmd() *cobra.Command {
 	}
 }
 
-// addCmd adds a new prompt
 func addCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add [name] [content]",
@@ -103,7 +109,6 @@ func addCmd() *cobra.Command {
 	return cmd
 }
 
-// listCmd lists all prompts
 func listCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list [collection]",
@@ -141,7 +146,6 @@ func listCmd() *cobra.Command {
 	}
 }
 
-// showCmd displays a prompt's details
 func showCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show [id]",
@@ -170,7 +174,6 @@ func showCmd() *cobra.Command {
 	}
 }
 
-// diffCmd shows differences between versions
 func diffCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "diff [id] [version1] [version2]",
@@ -183,27 +186,43 @@ func diffCmd() *cobra.Command {
 	}
 }
 
-// commitCmd versions a prompt
 func commitCmd() *cobra.Command {
-	return &cobra.Command{
+	var commitContent string
+
+	cmd := &cobra.Command{
 		Use:   "commit [id] [message]",
 		Short: "Commit a new version of a prompt",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if commitContent == "" {
+				return fmt.Errorf("content is required (use --content flag)")
+			}
+
 			db, err := storage.New(dbPath)
 			if err != nil {
 				return err
 			}
 			defer db.Close()
 
-			// In real implementation, read content from editor or stdin
-			fmt.Printf("Committed prompt %s: %s\n", args[0], args[1])
+			if err := db.UpdatePromptVersion(args[0], commitContent); err != nil {
+				return err
+			}
+
+			hash := generateID()
+			if err := db.AddCommit(args[0], hash, args[1], "user"); err != nil {
+				return err
+			}
+
+			fmt.Printf("Committed prompt %s: %s (hash: %s)\n", args[0], args[1], hash)
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVarP(&commitContent, "content", "m", "", "New content for the prompt")
+
+	return cmd
 }
 
-// rollbackCmd reverts to a previous version
 func rollbackCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "rollback [id] [version]",
@@ -216,7 +235,6 @@ func rollbackCmd() *cobra.Command {
 	}
 }
 
-// searchCmd searches prompts by content
 func searchCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "search [query]",
@@ -230,24 +248,30 @@ func searchCmd() *cobra.Command {
 	}
 }
 
-// serveCmd starts the web API
 func serveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "serve",
 		Short: "Start the web API server",
+		Long:  "Start the web API server with RESTful endpoints for managing prompts",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("Web server feature coming soon!")
-			return nil
+			server, err := api.NewServer(dbPath)
+			if err != nil {
+				return err
+			}
+			fmt.Println("Web API server starting on :8080")
+			return server.Start(":8080")
 		},
 	}
 }
 
-// Helper to generate unique IDs (simplified)
 func generateID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
-// Execute runs the CLI
 func Execute() error {
 	return rootCmd().Execute()
 }
