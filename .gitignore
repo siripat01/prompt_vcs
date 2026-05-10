@@ -1,0 +1,41 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+prompt-vcs/prompt-vcs
+
+# Test files
+*.test
+*.out
+coverage.out
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Environment
+.env
+.env.local
+
+# Database
+*.db
+*.sqlite
+
+# Go specific
+vendor/
+
+# Logs
+*.log
