@@ -1,0 +1,14 @@
+.prompt-list {
+  padding: 20px 0;
+}
+
+.prompt-list h2 {
+  margin-bottom: 20px;
+  color: var(--text-primary);
+}
+
+.prompt-list > p {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 40px;
+}
